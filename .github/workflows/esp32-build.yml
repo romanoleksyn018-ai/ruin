@@ -41,7 +41,7 @@ jobs:
       - name: Compile sketch
         run: |
           arduino-cli compile \
-            --fqbn esp32:esp32:esp32 \
+            --fqbn esp32 \
             --output-dir ./build \
             --verbose \
             sketch/RomaOS/RomaOS.ino 2>&1 | tail -50
