@@ -1,0 +1,66 @@
+name: ESP32 Build
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install arduino-cli
+        uses: arduino/setup-arduino-cli@v2
+
+      - name: Setup ESP32 core
+        run: |
+          arduino-cli config init
+          arduino-cli config add board_manager.additional_urls https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+          arduino-cli core update-index
+          arduino-cli core install esp32:esp32
+
+      - name: Install libraries
+        run: |
+          arduino-cli lib install "TFT_eSPI" --no-overwrite
+          arduino-cli lib install "TJpg_Decoder" --no-overwrite
+          arduino-cli lib install "NimBLE-Arduino" --no-overwrite
+
+      - name: Patch TFT_eSPI User_Setup.h
+        run: |
+          LIB_DIR=$(arduino-cli config get directories.user)/libraries
+          SETUP_FILE="$LIB_DIR/TFT_eSPI/User_Setup.h"
+          SELECT_FILE="$LIB_DIR/TFT_eSPI/User_Setup_Select.h"
+          if [ -f "$SETUP_FILE" ]; then
+            cp sketch/User_Setup.h "$SETUP_FILE"
+            echo "Patched User_Setup.h"
+          fi
+          if [ -f "$SELECT_FILE" ]; then
+            sed -i 's|^#include|//#include|g' "$SELECT_FILE"
+            sed -i '1s|^|#include <User_Setup.h>\n|' "$SELECT_FILE"
+            echo "Patched User_Setup_Select.h"
+          fi
+
+      - name: Compile sketch
+        run: |
+          arduino-cli compile \
+            --fqbn esp32:esp32:esp32 \
+            --output-dir ./build \
+            --verbose \
+            sketch/RomaOS/RomaOS.ino 2>&1 | tail -50
+
+      - name: Find and copy firmware
+        run: |
+          echo "=== Searching .bin ==="
+          find / -name "*.bin" -path "*/sketch/*" 2>/dev/null || true
+          find . -name "*.bin" 2>/dev/null || true
+          find /home/runner -name "*.bin" 2>/dev/null | head -5
+          mkdir -p firmware_out
+          find /home/runner -name "*.bin" 2>/dev/null | xargs -I{} cp {} firmware_out/ 2>/dev/null || true
+          find . -name "*.bin" 2>/dev/null | xargs -I{} cp {} firmware_out/ 2>/dev/null || true
+          ls -la firmware_out/
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware
+          path: firmware_out/
+          if-no-files-found: warn
+          retention-days: 7
